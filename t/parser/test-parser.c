@@ -52,19 +52,31 @@ int compare_field_descriptor(const ProtobufCFieldDescriptor* parsed, const Proto
 
         if( parsed->id != generated->id )
         {
-            printf("field id doesnt match parser->%d generated->%d\n", parsed->id, generated->id);
+            printf("field(%s) id doesnt match parser->%d generated->%d\n", parsed->name, parsed->id, generated->id);
             break;
         }
 
         if( parsed->label != generated->label )
         {
-            printf("field label doesnt match parser->%d generated->%d\n", parsed->label, generated->label);
+            printf("field(%s) label doesnt match parser->%d generated->%d\n", parsed->name, parsed->label, generated->label);
             break;
         }
 
         if( parsed->type != generated->type )
         {
-            printf("field type doesnt match parser->%d generated->%d\n", parsed->type, generated->type);
+            printf("field(%s) type doesnt match parser->%d generated->%d\n", parsed->name, parsed->type, generated->type);
+            break;
+        }
+
+        if( parsed->offset != generated->offset )
+        {
+            printf("field(%s) offset doesnt match parser->%d generated->%d\n", parsed->name, parsed->offset, generated->offset);
+            break;
+        }
+
+        if( parsed->quantifier_offset != generated->quantifier_offset )
+        {
+            printf("field(%s) quantifier offset doesnt match parser->%d generated->%d\n", parsed->name, parsed->quantifier_offset, generated->quantifier_offset);
             break;
         }
 
@@ -127,6 +139,12 @@ int compare_message_descriptor(const ProtobufCMessageDescriptor* parsed, const P
     int retval = 1;
     do
     {
+        if( parsed->magic != PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC )
+        {
+            printf("message magic doesnt match parser->%x. expected %x\n", parsed->magic, PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC );
+            break;
+        }
+
         if( strcmp(parsed->name, generated->name) != 0 )
         {
             printf("message name doesnt match parser->%s generated->%s\n", parsed->name, generated->name);
@@ -143,6 +161,12 @@ int compare_message_descriptor(const ProtobufCMessageDescriptor* parsed, const P
         {
             printf("message package_name doesnt match parser->%s generated->%s\n", 
                     parsed->package_name, generated->package_name );
+            break;
+        }
+
+        if( parsed->sizeof_message != generated->sizeof_message )
+        {
+            printf("message sizeof_message doesnt match parser->%ld generated->%ld\n", parsed->sizeof_message, generated->sizeof_message);
             break;
         }
 
@@ -195,6 +219,12 @@ int compare_enum_descriptor(const ProtobufCEnumDescriptor* parsed, const Protobu
     int retval = 1;
     do
     {
+        if( parsed->magic != PROTOBUF_C__ENUM_DESCRIPTOR_MAGIC )
+        {
+            printf("enum magic doesnt match parser->%x. expected %x\n", parsed->magic, PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC );
+            break;
+        }
+
         if( strcmp(parsed->name, generated->name) != 0 )
         {
             printf("enum name doesnt match parser->%s generated->%s\n", parsed->name, generated->name);

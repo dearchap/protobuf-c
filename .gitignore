@@ -29,6 +29,8 @@
 /test-suite.log
 TAGS
 protobuf-c/libprotobuf-c.pc
+protobuf-c/protobuf-yacc.h
+protobuf-c/protobuf-yacc.c
 protoc-c/protoc-c
 protoc-c/protoc-gen-c
 t/generated-code/test-generated-code

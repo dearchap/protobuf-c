@@ -341,12 +341,15 @@ static int qsort_compare_field_tags(const void *a, const void *b)
 static void build_message_descriptor(MessageDefinition* mdef, ProtobufCFileDescriptor* file_desc, ProtobufCMessageDescriptor* message)
 {
     unsigned i = 0;
+    unsigned offset = sizeof(ProtobufCMessage);
 
+    message->magic = PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC;
     message->name = mdef->name;
     message->short_name = mdef->short_name;
     message->package_name = file_desc->package_name;
     message->n_fields = 0;
     message->fields = NULL;
+    message->message_init = NULL; /* let the default init handle this */
 
     void **array = list_flatten(&mdef->field_definition_list);
 
@@ -370,18 +373,117 @@ static void build_message_descriptor(MessageDefinition* mdef, ProtobufCFileDescr
 
         for( ; i < mdef->field_definition_list.length; i++)
         {
+            unsigned quantifier_offset = 0;
+
             *(&fields[i]) = *((ProtobufCFieldDescriptor*)array[i]);
-            if(fields[i].type == PROTOBUF_C_TYPE_MESSAGE)
+
+            if( fields[i].type == PROTOBUF_C_TYPE_MESSAGE )
             {
                 fields[i].descriptor = ((MessageDefinition*)fields[i].descriptor)->message_descriptor;
             }
-            else if(fields[i].type == PROTOBUF_C_TYPE_ENUM)
+            else if( fields[i].type == PROTOBUF_C_TYPE_ENUM )
             {
                 fields[i].descriptor = ((EnumDefinition*)fields[i].descriptor)->enum_descriptor;
             }
+
+            /* for 64 bit compiler we need to add padding here */
+#ifdef __LP64__
+            if( ( offset % 8 ) != 0 )
+            {
+                do
+                {
+                    /* repeated fields have a "count" field which is of
+                       type int32_t */
+                    if( fields[i].label == PROTOBUF_C_LABEL_REPEATED ) 
+                    {
+                        break;
+                    }
+                    if( fields[i].label != PROTOBUF_C_LABEL_OPTIONAL )
+                    {
+                        break;
+                    }
+                    /* optional fields have a "has_type" field to detect
+                       presence or absence of a fields with the exception
+                       of message and string fields which are pointers */
+                    if( ( fields[i].type != PROTOBUF_C_TYPE_MESSAGE) &&
+                        (fields[i].type != PROTOBUF_C_TYPE_STRING ) )
+                    {
+                        break;
+                    }
+                    offset += 4;        
+                }while(0);
+            }
+#endif
+            if( fields[i].label == PROTOBUF_C_LABEL_REPEATED )
+            {
+                quantifier_offset = offset;
+                /* for number of elements in repeat which is of size_t */
+                offset += sizeof(size_t);
+            }
+            else if( fields[i].label == PROTOBUF_C_LABEL_OPTIONAL )
+            {
+                if( ( fields[i].type != PROTOBUF_C_TYPE_MESSAGE ) &&
+                    ( fields[i].type != PROTOBUF_C_TYPE_STRING ) )
+                {
+                    quantifier_offset = offset;
+                    /* for has_type field which is of type int */
+                    offset+=sizeof(int32_t);
+                }
+            }
+            fields[i].offset = offset;
+            fields[i].quantifier_offset = quantifier_offset;
+
+            unsigned length = 0;
+
+            if( fields[i].label == PROTOBUF_C_LABEL_REPEATED )
+            {
+                length+=sizeof(void*);
+            }
+            else 
+            {
+                switch(fields[i].type)
+                {
+	            case PROTOBUF_C_TYPE_INT32:
+	            case PROTOBUF_C_TYPE_SINT32:
+	            case PROTOBUF_C_TYPE_SFIXED32:
+                case PROTOBUF_C_TYPE_UINT32:
+	            case PROTOBUF_C_TYPE_FIXED32:
+                case PROTOBUF_C_TYPE_BOOL:
+                case PROTOBUF_C_TYPE_ENUM:
+                    length+=sizeof(int32_t);                
+                    break;
+	            case PROTOBUF_C_TYPE_INT64:
+	            case PROTOBUF_C_TYPE_SINT64:
+	            case PROTOBUF_C_TYPE_SFIXED64:
+	            case PROTOBUF_C_TYPE_UINT64:
+	            case PROTOBUF_C_TYPE_FIXED64:
+                    length+=sizeof(int64_t);
+                    break;
+	            case PROTOBUF_C_TYPE_FLOAT:
+                    length+=sizeof(float);
+                    break;
+	            case PROTOBUF_C_TYPE_DOUBLE:
+                    length+=sizeof(double);
+                    break;
+	            case PROTOBUF_C_TYPE_STRING:
+                    length+=sizeof(char*);
+                    break;
+	            case PROTOBUF_C_TYPE_BYTES:
+                    length+=1;
+                    break;
+                case PROTOBUF_C_TYPE_MESSAGE:
+                    length+=sizeof(void*);
+                    break;
+                default:
+                    printf("type %d not handled\n", fields[i].type);
+                    break;
+                }
+            }
+            offset += length;
         }   
         message->n_fields = mdef->field_definition_list.length;
         message->fields = fields;
+        message->sizeof_message = offset;
 
         /* sort the fields by tags */
         qsort(array, mdef->field_definition_list.length, sizeof(void*), qsort_compare_field_names);
@@ -428,6 +530,7 @@ static int qsort_compare_enum_names(const void *a, const void *b)
 
 static void build_enum_descriptor(ProtobufCFileDescriptor* file_desc, ProtobufCEnumDescriptor* desc, EnumDefinition* def)
 {
+    desc->magic = PROTOBUF_C__ENUM_DESCRIPTOR_MAGIC;
     desc->name = def->name;
     desc->short_name = def->short_name;
     desc->package_name = file_desc->package_name;
