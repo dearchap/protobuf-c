@@ -18,8 +18,16 @@
 "extensions" { return KEYWORD_EXTENSIONS; }
 "rpc"        { return KEYWORD_RPC; }
 "returns"    { return KEYWORD_RETURNS; }
+"default"    { return KEYWORD_DEFAULT; }
+"weak"       { return KEYWORD_WEAK; }
+"public"     { return KEYWORD_PUBLIC; }
+"java_package" { return KEYWORD_JAVA_PACKAGE; }
+"java_outer_classname" { return KEYWORD_JAVA_OUTER_CLASSNAME; }
+"optimize_for" { return KEYWORD_OPTIMIZE_FOR; }
+"SPEED"        { return KEYWORD_OPTIMIZE_FOR_FLAG; }
+"CODE_SIZE"    { return KEYWORD_OPTIMIZE_FOR_FLAG; }
+"LITE_RUNTIME" { return KEYWORD_OPTIMIZE_FOR_FLAG; }
 
-"default"    { yylval.flag = 0; return FIELDFLAG; }
 "packed"     { yylval.flag = PROTOBUF_C_FIELD_FLAG_PACKED; return FIELDFLAG; }
 "deprecated" { yylval.flag = PROTOBUF_C_FIELD_FLAG_DEPRECATED; return FIELDFLAG; } 
 
@@ -41,16 +49,26 @@
 "sfixed64"   { yylval.type = PROTOBUF_C_TYPE_SFIXED64; return FIELDTYPE; }
 "bool"       { yylval.type = PROTOBUF_C_TYPE_BOOL; return FIELDTYPE; }
 "string"     { yylval.type = PROTOBUF_C_TYPE_STRING; return FIELDTYPE; }
+"bytes"      { yylval.type = PROTOBUF_C_TYPE_BYTES; return FIELDTYPE; }
 
-[a-zA-Z][a-zA-Z0-9\-_]*     { yylval.s=strdup(yytext); return IDENT; }
+"true"       { yylval.b = 1; return BOOL_LITERAL; }
+"false"      { yylval.b = 0; return BOOL_LITERAL; }
 
+-?[0-9]+\.[0-9]*(([eE][+\-])[0-9]*)? |
+-?[0-9]+([eE][+\-])[0-9]*            |
+-?\.[0-9]+(([eE][+\-])[0-9]*)?       |
+"inf"                                |
+"-inf"                               |
+"nan"                       { yylval.d=atof(yytext); return FLOAT_LITERAL; }
 
-[1-9][0-9]*                 { yylval.d=atoi(yytext); return INT_LITERAL; }
+-?[1-9][0-9]*               { yylval.d=atoi(yytext); return INT_LITERAL; }
 0[0-7]*                     { yylval.d=atoi(yytext); return INT_LITERAL; }
 0[xX][0-9A-Fa-f]+           { yylval.d=atoi(yytext); return INT_LITERAL; }
 
-"true"                        { yylval.b = 1; return BOOL_LITERAL; }
-"false"                       { yylval.b = 0; return BOOL_LITERAL; }
+[a-zA-Z][a-zA-Z0-9\-_]*     { yylval.s=strdup(yytext); return IDENT; }
+[a-zA-Z][a-zA-Z0-9\-_]*(\.[a-zA-Z0-9\-_])* { yylval.s=strdup(yytext); return FULL_IDENT; }
+
+\".*(\\\")*.*\"             { yylval.s=strdup(yytext); return STRING_LITERAL; }
 
 "{" |
 "}" |

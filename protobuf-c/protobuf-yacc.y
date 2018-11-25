@@ -68,6 +68,9 @@ DEFINE_LIST(message_definition_tree);
 
 /* holds either a enum descriptor or a message definition */
 static void * tmp_descriptor = NULL;
+
+/* temporary storage for default value */
+void * default_value = NULL;
 %}
 
 %union
@@ -75,6 +78,7 @@ static void * tmp_descriptor = NULL;
   int d;
   char* s;
   int b;
+  float f;
   ProtobufCType type;
   ProtobufCLabel label;
   ProtobufCFieldFlag flag;
@@ -84,6 +88,7 @@ static void * tmp_descriptor = NULL;
   ProtobufCFieldDescriptor* fd;
 }
 
+%locations
 %token KEYWORD_MESSAGE 
 %token KEYWORD_PACKAGE 
 %token KEYWORD_IMPORT 
@@ -95,63 +100,79 @@ static void * tmp_descriptor = NULL;
 %token KEYWORD_ONEOF 
 %token KEYWORD_RPC
 %token KEYWORD_RETURNS
+%token KEYWORD_DEFAULT
+%token KEYWORD_WEAK
+%token KEYWORD_PUBLIC
+%token KEYWORD_JAVA_PACKAGE
+%token KEYWORD_JAVA_OUTER_CLASSNAME
+%token KEYWORD_OPTIMIZE_FOR
+%token KEYWORD_OPTIMIZE_FOR_FLAG
 %token <label> FIELDLABEL
 %token <type> FIELDTYPE
 %token <flag> FIELDFLAG
 %token <d> INT_LITERAL 
+%token <f> FLOAT_LITERAL
 %token <s> IDENT
+%token <s> FULL_IDENT
 %token <b> BOOL_LITERAL
-%type <s> FULL_IDENT
+%token <s> STRING_LITERAL
 %type <s> package_name
 %type <ev> enum_value_entry
 %type <ed> enum_definition
 %type <md> message_definition
 %type <md> message_definition_start
+%type <fd> raw_field_definition
 %type <fd> field_definition
 %type <type> field_type
+%type <flag> field_option
+%type <flag> field_option_list
+%type <flag> field_options
 
 %%
 
 proto_file_entry : /* nothing */
-                | package_declaration proto_file_entry
-                | syntax_declaration proto_file_entry
-                | message_definition proto_file_entry
-                | service_definition proto_file_entry
-                | enum_definition proto_file_entry
+                | proto_file_entry package_declaration 
+                | proto_file_entry syntax_declaration 
+                | proto_file_entry import_declaration
+                | proto_file_entry file_option_declaration
+                | proto_file_entry message_definition 
+                | proto_file_entry service_definition
+                | proto_file_entry enum_definition
                 ;
 
-package_declaration: KEYWORD_PACKAGE package_name ';' 
+package_declaration: KEYWORD_PACKAGE package_name  ';' 
                     { 
                         file_definition.package_name = $2;
+                        printf("package %s\n", $2);
                     }
                     ;
 
-package_name: FULL_IDENT
-
-FULL_IDENT: IDENT 
-            {
-                int len = strlen($1);
-                char* var = _allocator->alloc(_allocator->allocator_data, (len+1)*sizeof(char));
-                if(!var) YYABORT;
-                strncpy(var,$1, len);
-                var[len]='\0';
-            }
-          | IDENT "." FULL_IDENT
-            {
-                int len = strlen($1)+strlen($3)+1;
-                char* var = _allocator->alloc(_allocator->allocator_data, (len+1)*sizeof(char));                
-                if(!var) YYABORT;
-                sprintf(var,"%s.%s",$1,$3);                
-                var[len]='\0';
-                _allocator->free(_allocator->allocator_data,$3);                                        
-            }
-
+package_name: IDENT
+            | FULL_IDENT
+            ;
 
 syntax_declaration: KEYWORD_SYNTAX '=' '"' IDENT '"' ';' 
                     { 
                         printf("syntax %s\n",$4);
                     }
                     ;
+
+import_declaration: KEYWORD_IMPORT import_qualifier STRING_LITERAL ';'
+                    ;
+
+import_qualifier: /* nothing */
+                | KEYWORD_WEAK
+                | KEYWORD_PUBLIC
+                ;
+
+file_option_declaration: file_option
+                        | file_option_declaration file_option
+                        ;
+
+file_option: KEYWORD_OPTION KEYWORD_JAVA_PACKAGE '=' STRING_LITERAL ';'
+            | KEYWORD_OPTION KEYWORD_JAVA_OUTER_CLASSNAME '=' STRING_LITERAL ';'                    
+            | KEYWORD_OPTION KEYWORD_OPTIMIZE_FOR '=' KEYWORD_OPTIMIZE_FOR_FLAG ';'
+            ;
 
 message_definition: message_definition_start '{' message_body '}' optional_semicolon
                           { 
@@ -177,27 +198,49 @@ message_definition_start: KEYWORD_MESSAGE IDENT
                           ;
 
 message_body: /* nothing */
-            | field_definition message_body  
-                { 
-                    MessageDefinition* m = (MessageDefinition*)message_definition_tree.last->data;
-                    if(!list_add(&m->field_definition_list, $1)) YYABORT;
-                }
-            | enum_definition message_body
-            | message_definition message_body 
+            | message_body field_definition 
+            | message_body enum_definition 
+            | message_body message_definition
+            | message_body KEYWORD_ONEOF IDENT '{' field_definition_list '}'
             ;
 
-field_definition: FIELDLABEL field_type IDENT '=' INT_LITERAL field_options ';' 
+raw_field_definition: field_type IDENT '=' INT_LITERAL field_options ';' 
+                        { 
+                            ProtobufCFieldDescriptor* desc = _allocator->alloc(_allocator->allocator_data, sizeof(ProtobufCFieldDescriptor));
+                            if(!desc) YYABORT;
+                            desc->name=$2;
+                            desc->id=$4;                            
+                            desc->type = $1;
+                            desc->descriptor = tmp_descriptor;
+                            desc->flags = $5;
+                            desc->default_value = default_value;
+                            default_value = NULL;
+                            $$=desc;                            
+                            printf("field %s\n", desc->name);
+                            MessageDefinition* m = (MessageDefinition*)message_definition_tree.last->data;
+                            if(!list_add(&m->field_definition_list, desc)) YYABORT;
+                        }
+                        ;
+
+field_definition: FIELDLABEL raw_field_definition
                   { 
-                      ProtobufCFieldDescriptor* desc = _allocator->alloc(_allocator->allocator_data, sizeof(ProtobufCFieldDescriptor));
-                      if(!desc) YYABORT;
-                      desc->name=$3;
-                      desc->id=$5;
-                      desc->label=$1;
-                      desc->type = $2;
-                      desc->descriptor = tmp_descriptor;
-                      $$=desc;
+                      $2->label=$1;
+                      $$ = $2;
                   }
                   ; 
+
+/* this appears only with one of */
+field_definition_list: raw_field_definition    
+                        {
+                            printf("oneof %s\n", $1->name);
+                            $1->flags |= PROTOBUF_C_FIELD_FLAG_ONEOF;                            
+                        }
+                    | field_definition_list raw_field_definition
+                        {
+                            printf("oneof %s\n", $2->name);
+                            $2->flags |= PROTOBUF_C_FIELD_FLAG_ONEOF;
+                        }
+                    ;
 
 field_type:  FIELDTYPE { tmp_descriptor = NULL; $$ = $1; }
           |  IDENT  
@@ -208,8 +251,51 @@ field_type:  FIELDTYPE { tmp_descriptor = NULL; $$ = $1; }
                 $$ = is_enum ? PROTOBUF_C_TYPE_ENUM : PROTOBUF_C_TYPE_MESSAGE;
             }
 
-field_options: /* nothing */
-              | '[' FIELDFLAG '=' IDENT ']'
+field_options: /* nothing */              { $$ = 0; }
+              | '[' field_option_list ']' { $$ = $2; }
+
+field_option_list: field_option           { $$ = $1; }
+                |  field_option_list "," field_option { $$ = ($1 | $3 ); }
+
+field_option: FIELDFLAG '=' BOOL_LITERAL
+                {
+                    if($3)
+                    {
+                        $$ = $1;
+                    }
+                }
+            | KEYWORD_DEFAULT '=' BOOL_LITERAL
+            {
+                default_value = _allocator->alloc(_allocator->allocator_data, sizeof(int));
+                if(!default_value) YYABORT;
+                *(int*)default_value = $3;
+                $$=0;
+            }
+            | KEYWORD_DEFAULT '=' IDENT
+            {
+                default_value = $3;
+                $$=0;
+            }
+            | KEYWORD_DEFAULT '=' STRING_LITERAL
+            {
+                default_value = $3;
+                $$=0;
+            }
+            | KEYWORD_DEFAULT '=' INT_LITERAL
+            {
+                default_value = _allocator->alloc(_allocator->allocator_data, sizeof(int));
+                if(!default_value) YYABORT;
+                *(int*)default_value = $3;
+                $$=0;
+            }
+            | KEYWORD_DEFAULT '=' FLOAT_LITERAL
+            {
+                default_value = _allocator->alloc(_allocator->allocator_data, sizeof(float));
+                if(!default_value) YYABORT;
+                *(float*)default_value = $3;
+                $$=0;
+            }
+            ;
 
 enum_definition: KEYWORD_ENUM IDENT '{' enum_values '}'
                   {
@@ -227,9 +313,9 @@ enum_definition: KEYWORD_ENUM IDENT '{' enum_values '}'
                   ;
 
 enum_values: /* nothing */
-            | enum_values enum_value_entry 
+            | enum_value_entry enum_values 
                 { 
-                    if(!list_add(&enum_values_list, $2)) YYABORT;
+                    if(!list_add(&enum_values_list, $1)) YYABORT;
                 }
             ;
 
@@ -259,12 +345,12 @@ static char* make_full_name(char *val)
     {      
         MessageDefinition* def = message_definition_tree.last->data; 
         len+=strlen(def->name);                   
-        len+=1;                                   
+        len+=2;                                   
     } 
     else if(file_definition.package_name!=NULL) 
     {      
         len+=strlen(file_definition.package_name); 
-        len+=1; /* for the dot */                  
+        len+=2; /* for the dot */                  
     }                                             
 
     if(len==0)
@@ -285,6 +371,7 @@ static char* make_full_name(char *val)
     }
 
     sprintf(tmp1,"%s", val);
+    tmp[len] = '\0';
     return tmp;
 }                              
 
@@ -338,6 +425,151 @@ static int qsort_compare_field_tags(const void *a, const void *b)
     return (*(ProtobufCFieldDescriptor**)a)->id - (*(ProtobufCFieldDescriptor**)b)->id;
 }
 
+static int lookup_enum_value(ProtobufCEnumDescriptor* desc, const char* enum_name)
+{
+    int val = 0;
+    for( unsigned i = 0; i < desc->n_values; i++ )
+    {
+        const ProtobufCEnumValue* enum_value = &desc->values[i];
+        if( strcmp(enum_value->name, enum_name) == 0 )
+        {
+            val = enum_value->value;
+        }
+    }
+    return val;
+}
+
+static void build_field_descriptor(ProtobufCFieldDescriptor* dest, ProtobufCFieldDescriptor* src, int* offset)
+{
+    unsigned quantifier_offset = 0;
+
+    *dest = *src;
+
+    if( dest->type == PROTOBUF_C_TYPE_MESSAGE )
+    {
+        dest->descriptor = ((MessageDefinition*)dest->descriptor)->message_descriptor;
+    }
+    else if( dest->type == PROTOBUF_C_TYPE_ENUM )
+    {
+        dest->descriptor = ((EnumDefinition*)dest->descriptor)->enum_descriptor;
+    }
+
+    /* for 64 bit compiler we need to add padding here */
+#ifdef __LP64__
+    if( ( *offset % 8 ) != 0 )
+    {
+        do
+        {
+            /* repeated fields have a "count" field which is of
+                type int32_t */
+            if( dest->label == PROTOBUF_C_LABEL_REPEATED ) 
+            {
+                break;
+            }
+            if( dest->label != PROTOBUF_C_LABEL_OPTIONAL )
+            {
+                break;
+            }
+            /* optional fields have a "has_type" field to detect
+                presence or absence of a fields with the exception
+                of message and string fields which are pointers */
+            if( ( dest->type != PROTOBUF_C_TYPE_MESSAGE) &&
+                (dest->type != PROTOBUF_C_TYPE_STRING ) )
+            {
+                break;
+            }
+            *offset += 4;        
+        }while(0);
+    }
+#endif
+    if( dest->label == PROTOBUF_C_LABEL_REPEATED )
+    {
+        quantifier_offset = *offset;
+        /* for number of elements in repeat which is of size_t */
+        *offset += sizeof(size_t);
+    }
+    else if( dest->label == PROTOBUF_C_LABEL_OPTIONAL )
+    {
+        if( ( dest->type != PROTOBUF_C_TYPE_MESSAGE ) &&
+            ( dest->type != PROTOBUF_C_TYPE_STRING ) )
+        {
+            quantifier_offset = *offset;
+            /* for has_type field which is of type int */
+            *offset+=sizeof(int32_t);
+#ifdef __LP64__            
+            /* additional padding for bytes structure since
+               ProtobufCBinaryData starts with size_t which is 8 bytes long */
+            if( dest->type == PROTOBUF_C_TYPE_BYTES )
+            {
+                *offset+=4;
+            }
+#endif
+        }
+    }
+    dest->offset = *offset;
+    dest->quantifier_offset = quantifier_offset;
+
+    unsigned length = 0;
+
+    if( dest->label == PROTOBUF_C_LABEL_REPEATED )
+    {
+        length+=sizeof(void*);
+    }
+    else 
+    {
+        switch(dest->type)
+        {
+        case PROTOBUF_C_TYPE_INT32:
+        case PROTOBUF_C_TYPE_SINT32:
+        case PROTOBUF_C_TYPE_SFIXED32:
+        case PROTOBUF_C_TYPE_UINT32:
+        case PROTOBUF_C_TYPE_FIXED32:
+        case PROTOBUF_C_TYPE_BOOL:
+        case PROTOBUF_C_TYPE_ENUM:
+            length+=sizeof(int32_t);                
+            break;
+        case PROTOBUF_C_TYPE_INT64:
+        case PROTOBUF_C_TYPE_SINT64:
+        case PROTOBUF_C_TYPE_SFIXED64:
+        case PROTOBUF_C_TYPE_UINT64:
+        case PROTOBUF_C_TYPE_FIXED64:
+            length+=sizeof(int64_t);
+            break;
+        case PROTOBUF_C_TYPE_FLOAT:
+            length+=sizeof(float);
+            break;
+        case PROTOBUF_C_TYPE_DOUBLE:
+            length+=sizeof(double);
+            break;
+        case PROTOBUF_C_TYPE_STRING:
+            length+=sizeof(char*);
+            break;
+        case PROTOBUF_C_TYPE_BYTES:
+            length+=sizeof(ProtobufCBinaryData);
+            break;
+        case PROTOBUF_C_TYPE_MESSAGE:
+            length+=sizeof(void*);
+            break;
+        default:
+            printf("type %d not handled\n", dest->type);
+            break;
+        }
+
+        /* for enum we need to lookup the enum value */
+        if( (dest->type == PROTOBUF_C_TYPE_ENUM) &&
+            (dest->default_value != NULL ) )
+        {
+            int value = lookup_enum_value(dest->descriptor, (char*)dest->default_value);
+            dest->default_value = _allocator->alloc(_allocator->allocator_data, sizeof(int));
+            if( dest->default_value )
+            {
+                *(int*)dest->default_value = value;
+            }
+        }
+    }
+    *offset += length;
+}
+
 static void build_message_descriptor(MessageDefinition* mdef, ProtobufCFileDescriptor* file_desc, ProtobufCMessageDescriptor* message)
 {
     unsigned i = 0;
@@ -373,113 +605,7 @@ static void build_message_descriptor(MessageDefinition* mdef, ProtobufCFileDescr
 
         for( ; i < mdef->field_definition_list.length; i++)
         {
-            unsigned quantifier_offset = 0;
-
-            *(&fields[i]) = *((ProtobufCFieldDescriptor*)array[i]);
-
-            if( fields[i].type == PROTOBUF_C_TYPE_MESSAGE )
-            {
-                fields[i].descriptor = ((MessageDefinition*)fields[i].descriptor)->message_descriptor;
-            }
-            else if( fields[i].type == PROTOBUF_C_TYPE_ENUM )
-            {
-                fields[i].descriptor = ((EnumDefinition*)fields[i].descriptor)->enum_descriptor;
-            }
-
-            /* for 64 bit compiler we need to add padding here */
-#ifdef __LP64__
-            if( ( offset % 8 ) != 0 )
-            {
-                do
-                {
-                    /* repeated fields have a "count" field which is of
-                       type int32_t */
-                    if( fields[i].label == PROTOBUF_C_LABEL_REPEATED ) 
-                    {
-                        break;
-                    }
-                    if( fields[i].label != PROTOBUF_C_LABEL_OPTIONAL )
-                    {
-                        break;
-                    }
-                    /* optional fields have a "has_type" field to detect
-                       presence or absence of a fields with the exception
-                       of message and string fields which are pointers */
-                    if( ( fields[i].type != PROTOBUF_C_TYPE_MESSAGE) &&
-                        (fields[i].type != PROTOBUF_C_TYPE_STRING ) )
-                    {
-                        break;
-                    }
-                    offset += 4;        
-                }while(0);
-            }
-#endif
-            if( fields[i].label == PROTOBUF_C_LABEL_REPEATED )
-            {
-                quantifier_offset = offset;
-                /* for number of elements in repeat which is of size_t */
-                offset += sizeof(size_t);
-            }
-            else if( fields[i].label == PROTOBUF_C_LABEL_OPTIONAL )
-            {
-                if( ( fields[i].type != PROTOBUF_C_TYPE_MESSAGE ) &&
-                    ( fields[i].type != PROTOBUF_C_TYPE_STRING ) )
-                {
-                    quantifier_offset = offset;
-                    /* for has_type field which is of type int */
-                    offset+=sizeof(int32_t);
-                }
-            }
-            fields[i].offset = offset;
-            fields[i].quantifier_offset = quantifier_offset;
-
-            unsigned length = 0;
-
-            if( fields[i].label == PROTOBUF_C_LABEL_REPEATED )
-            {
-                length+=sizeof(void*);
-            }
-            else 
-            {
-                switch(fields[i].type)
-                {
-	            case PROTOBUF_C_TYPE_INT32:
-	            case PROTOBUF_C_TYPE_SINT32:
-	            case PROTOBUF_C_TYPE_SFIXED32:
-                case PROTOBUF_C_TYPE_UINT32:
-	            case PROTOBUF_C_TYPE_FIXED32:
-                case PROTOBUF_C_TYPE_BOOL:
-                case PROTOBUF_C_TYPE_ENUM:
-                    length+=sizeof(int32_t);                
-                    break;
-	            case PROTOBUF_C_TYPE_INT64:
-	            case PROTOBUF_C_TYPE_SINT64:
-	            case PROTOBUF_C_TYPE_SFIXED64:
-	            case PROTOBUF_C_TYPE_UINT64:
-	            case PROTOBUF_C_TYPE_FIXED64:
-                    length+=sizeof(int64_t);
-                    break;
-	            case PROTOBUF_C_TYPE_FLOAT:
-                    length+=sizeof(float);
-                    break;
-	            case PROTOBUF_C_TYPE_DOUBLE:
-                    length+=sizeof(double);
-                    break;
-	            case PROTOBUF_C_TYPE_STRING:
-                    length+=sizeof(char*);
-                    break;
-	            case PROTOBUF_C_TYPE_BYTES:
-                    length+=1;
-                    break;
-                case PROTOBUF_C_TYPE_MESSAGE:
-                    length+=sizeof(void*);
-                    break;
-                default:
-                    printf("type %d not handled\n", fields[i].type);
-                    break;
-                }
-            }
-            offset += length;
+            build_field_descriptor(&fields[i], ((ProtobufCFieldDescriptor*)array[i]), &offset );
         }   
         message->n_fields = mdef->field_definition_list.length;
         message->fields = fields;

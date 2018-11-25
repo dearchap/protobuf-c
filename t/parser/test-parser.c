@@ -80,6 +80,65 @@ int compare_field_descriptor(const ProtobufCFieldDescriptor* parsed, const Proto
             break;
         }
 
+        /* check if they are both not NULL */
+        if( parsed->default_value != generated->default_value )
+        {
+            switch(parsed->type)
+            {
+            case PROTOBUF_C_TYPE_INT32:
+            case PROTOBUF_C_TYPE_SINT32:
+            case PROTOBUF_C_TYPE_SFIXED32:
+            case PROTOBUF_C_TYPE_UINT32:
+            case PROTOBUF_C_TYPE_FIXED32:
+            case PROTOBUF_C_TYPE_BOOL:
+            case PROTOBUF_C_TYPE_ENUM:
+                if( *(int*)parsed->default_value != *(int*)generated->default_value )
+                {
+                    printf("field(%s) default value doesnt match parser->%d generated->%d\n", parsed->name, *(int*)parsed->default_value, *(int*)generated->default_value);
+                    retval = -1;
+                }
+                break;
+            case PROTOBUF_C_TYPE_INT64:
+            case PROTOBUF_C_TYPE_SINT64:
+            case PROTOBUF_C_TYPE_SFIXED64:
+            case PROTOBUF_C_TYPE_UINT64:
+            case PROTOBUF_C_TYPE_FIXED64:
+                if( *(int64_t*)parsed->default_value != *(int64_t*)generated->default_value )
+                {
+                    printf("field(%s) default value doesnt match parser->%ld generated->%ld\n", parsed->name, *(int64_t*)parsed->default_value, *(int64_t*)generated->default_value);
+                    retval = -1;
+                }
+                break;
+            case PROTOBUF_C_TYPE_FLOAT:
+                if( *(float*)parsed->default_value != *(float*)generated->default_value )
+                {
+                    printf("field(%s) default value doesnt match parser->%f generated->%f\n", parsed->name, *(float*)parsed->default_value, *(float*)generated->default_value);
+                    retval = -1;
+                }
+                break;
+            case PROTOBUF_C_TYPE_DOUBLE:
+                if( *(double*)parsed->default_value != *(double*)generated->default_value )
+                {
+                    printf("field(%s) default value doesnt match parser->%lf generated->%lf\n", parsed->name, *(double*)parsed->default_value, *(double*)generated->default_value);
+                    retval = -1;
+                }
+                break;
+            case PROTOBUF_C_TYPE_STRING:
+                if( strcmp((char*)parsed->default_value, (char*)generated->default_value ) != 0 )
+                {
+                    printf("field(%s) default value doesnt match parser->%s generated->%s\n", parsed->name, (char*)parsed->default_value, (char*)generated->default_value);
+                    retval = -1;
+                }
+                break;
+            default:
+                break;
+            }
+            if(retval == -1)
+            {
+                retval = 1;
+                break;
+            }
+        }
         retval = 0;
     }while(0);
     return retval;
@@ -315,6 +374,7 @@ int find_enum_descriptor(const ProtobufCFileDescriptor* desc, const ProtobufCEnu
     int retval = 1;
     for( unsigned i = 0; i < desc->n_enums; i++)
     {
+        printf("%s\n", desc->enums[i].name );
         if( strcmp(desc->enums[i].name, edesc->name) == 0 )
         {
             printf("Found enum %s\n", edesc->name);            
@@ -339,7 +399,8 @@ int main(int argc, char* argv[])
     };
     const ProtobufCEnumDescriptor* edesc[] = 
     {
-        &foo__person__phone_type__descriptor
+        &foo__person__phone_type__descriptor,
+        &foo__person__test_enum_small__descriptor
     };
 
     do
@@ -367,6 +428,7 @@ int main(int argc, char* argv[])
         {
             if(find_enum_descriptor(desc, edesc[i]) != 0)
             {    
+                printf("Couldnt find enum %s\n", edesc[i]->name);
                 retval = -1;
                 break;
             }

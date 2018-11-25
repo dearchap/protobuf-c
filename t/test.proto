@@ -1,5 +1,7 @@
 package foo;
 
+option java_package = "com.example.foo";
+
 message Person {
   required string name = 1;
   required int32 id = 2;
@@ -22,6 +24,28 @@ message Person {
   }
 
   repeated PhoneNumber phone = 4;
+  optional bytes test = 5 [default ="\0\001\a\b\f\n\r\t\v\\\'\"\xfe"];
+  enum TestEnumSmall {
+    VALUE_A = 42;
+    //VALUE_B = 42;
+    //VALUE_C = 42;
+    VALUE_D = 666;
+    //VALUE_E = 666;
+    VALUE_F = 1000;
+    //VALUE_AA = 1000;
+    VALUE_BB = 1001;
+    //option allow_alias = true;
+      }  
+  ///oneof test_oneof {
+  //  int32 test_int32 = 5;
+  //  bytes test_bytes = 6;
+  //}
+  //required string test2 = 7;
+  //oneof test2_oneof {
+  //  int32 test2_int32 = 8;
+  //  bytes test2_bytes = 9;
+  //}
+
 }
 
 message LookupResult
